@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite it using the metadata below."
+title: "Albania Air-Quality Forecasting Benchmark"
+type: software
+version: 1.0.0
+date-released: 2026-05-26
+license: MIT
+abstract: "A benchmark-driven short-horizon urban air-quality forecasting workflow for Albanian cities using open gridded environmental data."
+repository-code: "https://github.com/AlketaHyso/Forecast-Urban-Air-Quality"
+url: "https://github.com/AlketaHyso/Forecast-Urban-Air-Quality"
+authors:
+  - family-names: "Hyso"
+    given-names: "Alketa"
+    orcid: "https://orcid.org/0009-0000-6256-9831"
+  - family-names: "Gjylapi"
+    given-names: "Dezdemona"
+    orcid: "https://orcid.org/0009-0005-5186-3636"
+keywords:
+  - air quality forecasting
+  - PM2.5
+  - AQI
+  - benchmark
+  - Albania

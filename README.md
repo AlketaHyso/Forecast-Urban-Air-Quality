@@ -106,6 +106,12 @@ For a concise editorial supplement, see:
 - `docs/supplementary_reproducibility_note_editorial.md`
 - `docs/Supplementary_Note_S1_Reproducibility_Details.docx`
 
+## How to cite
+
+If you use this repository, please cite it using the metadata provided in `CITATION.cff`.
+
+The repository accompanies the benchmark-driven forecasting study associated with this project. If a final article, DOI, or archival release becomes available, it should be cited together with the repository.
+
 ## Software environment
 
 The reported experiments were executed in Python 3.12.2 using:
