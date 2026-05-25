@@ -1,0 +1,33 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local data and generated outputs
+data/raw/
+data/processed/
+outputs/
+
+# Office temporary files
+~$*
+*.tmp
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+
+# Local manuscript working files
+*.bak
+Publikim/
+Manuscript.docx
+Manuscript - Copy Vjeter.docx
+manuscript AI dedect.docx
+reviewer proposal.docx
+Template.pdf
