@@ -1,0 +1,28 @@
+{
+  "title": "Albania Air-Quality Forecasting Benchmark",
+  "version": "1.0.0",
+  "description": "A benchmark-driven short-horizon urban air-quality forecasting workflow for Albanian cities using open gridded environmental data.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "mit",
+  "language": "eng",
+  "creators": [
+    {
+      "name": "Hyso, Alketa",
+      "affiliation": "University \"Ismail Qemali\", Vlore, Albania",
+      "orcid": "0009-0000-6256-9831"
+    },
+    {
+      "name": "Gjylapi, Dezdemona",
+      "affiliation": "University \"Ismail Qemali\", Vlore, Albania",
+      "orcid": "0009-0005-5186-3636"
+    }
+  ],
+  "keywords": [
+    "air quality forecasting",
+    "PM2.5",
+    "AQI",
+    "benchmark",
+    "Albania"
+  ]
+}
