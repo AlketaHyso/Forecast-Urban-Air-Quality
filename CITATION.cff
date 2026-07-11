@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use this repository, please cite it using the metadata below."
 title: "Albania Air-Quality Forecasting Benchmark"
 type: software
-version: 1.0.0
-date-released: 2026-05-26
+version: 1.1.0
+date-released: 2026-07-11
 license: MIT
 abstract: "A benchmark-driven short-horizon urban air-quality forecasting workflow for Albanian cities using open gridded environmental data."
 repository-code: "https://github.com/AlketaHyso/Forecast-Urban-Air-Quality"
