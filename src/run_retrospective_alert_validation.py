@@ -180,18 +180,45 @@ def build_case_level_frame(selected: pd.DataFrame) -> pd.DataFrame:
     return cases.sort_values(["origin_date", "city", "horizon_days"]).reset_index(drop=True)
 
 
-def add_alert_labels(cases: pd.DataFrame) -> pd.DataFrame:
+def build_origin_specific_pm25_thresholds(cases: pd.DataFrame) -> pd.DataFrame:
     daily = pd.read_csv(PROCESSED_DIR / "albania_air_quality_daily.csv", parse_dates=["date"])
-    pm25_reference = (
-        daily.groupby("city")["pm2_5_mean"]
-        .agg(
-            pm25_p90=lambda series: float(np.nanpercentile(series.dropna(), 90)),
-            pm25_p95=lambda series: float(np.nanpercentile(series.dropna(), 95)),
-        )
-        .reset_index()
+    unique_pairs = (
+        cases[["city", "origin_date"]]
+        .drop_duplicates()
+        .sort_values(["city", "origin_date"])
+        .reset_index(drop=True)
     )
 
-    enriched = cases.merge(pm25_reference, on="city", how="left")
+    threshold_rows: list[dict[str, object]] = []
+    for row in unique_pairs.itertuples(index=False):
+        history = daily.loc[
+            (daily["city"] == row.city)
+            & (daily["date"] <= row.origin_date),
+            "pm2_5_mean",
+        ].dropna()
+
+        if history.empty:
+            pm25_p90 = float("nan")
+            pm25_p95 = float("nan")
+        else:
+            pm25_p90 = float(np.nanpercentile(history.to_numpy(dtype=float), 90))
+            pm25_p95 = float(np.nanpercentile(history.to_numpy(dtype=float), 95))
+
+        threshold_rows.append(
+            {
+                "city": row.city,
+                "origin_date": row.origin_date,
+                "history_days_used": int(len(history)),
+                "pm25_p90": pm25_p90,
+                "pm25_p95": pm25_p95,
+            }
+        )
+
+    return pd.DataFrame(threshold_rows)
+
+
+def add_alert_labels(cases: pd.DataFrame, thresholds: pd.DataFrame) -> pd.DataFrame:
+    enriched = cases.merge(thresholds, on=["city", "origin_date"], how="left")
     enriched["predicted_aqi_label"] = enriched["predicted_european_aqi_max"].apply(aqi_label)
     enriched["observed_aqi_label"] = enriched["observed_european_aqi_max"].apply(aqi_label)
     enriched["predicted_pm25_signal"] = enriched.apply(
@@ -244,7 +271,7 @@ def build_confusion_tables(cases: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFr
 
 
 def summarise_overall(cases: pd.DataFrame) -> pd.DataFrame:
-    summary = pd.DataFrame(
+    return pd.DataFrame(
         [
             {
                 "n_cases": int(len(cases)),
@@ -257,7 +284,6 @@ def summarise_overall(cases: pd.DataFrame) -> pd.DataFrame:
             }
         ]
     )
-    return summary
 
 
 def summarise_by_horizon(cases: pd.DataFrame) -> pd.DataFrame:
@@ -273,7 +299,6 @@ def summarise_by_horizon(cases: pd.DataFrame) -> pd.DataFrame:
                 "mean_absolute_alert_gap": float((frame["alert_score_gap"].abs()).mean()),
             }
         )
-
     return pd.DataFrame(rows).sort_values("horizon_days").reset_index(drop=True)
 
 
@@ -290,7 +315,11 @@ def binary_event_metrics(frame: pd.DataFrame, threshold_score: int) -> dict[str,
     recall = safe_divide(tp, tp + fn)
     specificity = safe_divide(tn, tn + fp)
     accuracy = safe_divide(tp + tn, len(frame))
-    f1 = safe_divide(2 * precision * recall, precision + recall) if not np.isnan(precision) and not np.isnan(recall) else float("nan")
+    f1 = (
+        safe_divide(2 * precision * recall, precision + recall)
+        if not np.isnan(precision) and not np.isnan(recall)
+        else float("nan")
+    )
 
     return {
         "tp": tp,
@@ -321,7 +350,6 @@ def summarise_binary_events(cases: pd.DataFrame) -> pd.DataFrame:
                     **metrics,
                 }
             )
-
     return pd.DataFrame(rows)
 
 
@@ -338,8 +366,9 @@ def summarise_alert_distribution(cases: pd.DataFrame) -> pd.DataFrame:
         .reindex(ALERT_LEVELS, fill_value=0)
         .rename("predicted_cases")
     )
-    distribution = pd.concat([observed_counts, predicted_counts], axis=1).reset_index()
-    return distribution.rename(columns={"index": "alert_level"})
+    return pd.concat([observed_counts, predicted_counts], axis=1).reset_index().rename(
+        columns={"index": "alert_level"}
+    )
 
 
 def build_manuscript_summary_table(
@@ -370,18 +399,11 @@ def build_manuscript_summary_table(
 
     manuscript = pd.DataFrame(base_rows)
     binary_pivot = (
-        binary_summary[
-            ["horizon_days", "threshold", "precision", "recall", "f1"]
-        ]
+        binary_summary[["horizon_days", "threshold", "precision", "recall", "f1"]]
         .copy()
         .assign(
             evaluation_scope=lambda frame: frame["horizon_days"].map(
-                {
-                    "All": "Overall",
-                    "1": "1-day",
-                    "2": "2-day",
-                    "3": "3-day",
-                }
+                {"All": "Overall", "1": "1-day", "2": "2-day", "3": "3-day"}
             )
         )
         .drop(columns=["horizon_days"])
@@ -391,10 +413,7 @@ def build_manuscript_summary_table(
         f"{metric}_{threshold.lower().replace('-', '_').replace(' ', '_')}"
         for metric, threshold in binary_pivot.columns
     ]
-    binary_pivot = binary_pivot.reset_index()
-
-    manuscript = manuscript.merge(binary_pivot, on="evaluation_scope", how="left")
-    return manuscript
+    return manuscript.merge(binary_pivot.reset_index(), on="evaluation_scope", how="left")
 
 
 def render_confusion_figure(counts: pd.DataFrame, row_normalized: pd.DataFrame) -> None:
@@ -406,17 +425,14 @@ def render_confusion_figure(counts: pd.DataFrame, row_normalized: pd.DataFrame) 
     ax.set_yticklabels(ALERT_LEVELS)
     ax.set_xlabel("Predicted final alert level")
     ax.set_ylabel("Observed final alert level")
-    ax.set_title("Retrospective alert-level confusion matrix")
+    ax.set_title("Retrospective alert-level confusion matrix (origin-specific PM2.5 thresholds)")
 
     for row_idx, observed_level in enumerate(ALERT_LEVELS):
         row_total = int(counts.loc[observed_level].sum())
         for col_idx, predicted_level in enumerate(ALERT_LEVELS):
             count_value = int(counts.loc[observed_level, predicted_level])
             share_value = row_normalized.loc[observed_level, predicted_level]
-            if row_total == 0 or np.isnan(share_value):
-                label = f"{count_value}"
-            else:
-                label = f"{count_value}\n{share_value:.0%}"
+            label = f"{count_value}" if row_total == 0 or np.isnan(share_value) else f"{count_value}\n{share_value:.0%}"
             text_color = "white" if not np.isnan(share_value) and share_value >= 0.55 else "black"
             ax.text(col_idx, row_idx, label, ha="center", va="center", fontsize=9, color=text_color)
 
@@ -428,7 +444,7 @@ def render_confusion_figure(counts: pd.DataFrame, row_normalized: pd.DataFrame) 
     plt.close(fig)
 
 
-def write_metadata(cases: pd.DataFrame) -> None:
+def write_metadata(cases: pd.DataFrame, thresholds: pd.DataFrame) -> None:
     metadata = {
         "selection_basis": (
             "Fixed benchmark-defined champion map by city, target, and horizon, derived from the "
@@ -449,20 +465,32 @@ def write_metadata(cases: pd.DataFrame) -> None:
             }
             for threshold_name, threshold_description, threshold_score in EVENT_THRESHOLDS
         ],
-        "pm25_threshold_basis": "City-specific p90 and p95 from the processed daily study dataset.",
+        "pm25_threshold_basis": (
+            "City-specific p90 and p95 recomputed separately for each forecast origin using only "
+            "daily PM2.5 history available up to and including the issue date."
+        ),
+        "threshold_history_summary": {
+            "min_history_days_used": int(thresholds["history_days_used"].min()),
+            "max_history_days_used": int(thresholds["history_days_used"].max()),
+        },
         "outputs": {
+            "champion_map": str(TABLE_DIR / "champion_map_used.csv"),
+            "origin_specific_thresholds": str(TABLE_DIR / "origin_specific_pm25_thresholds.csv"),
             "case_level_predictions": str(TABLE_DIR / "alert_case_predictions.csv"),
             "overall_summary": str(TABLE_DIR / "overall_alert_performance.csv"),
             "horizon_summary": str(TABLE_DIR / "alert_performance_by_horizon.csv"),
             "binary_metrics": str(TABLE_DIR / "binary_event_metrics.csv"),
             "alert_distribution": str(TABLE_DIR / "alert_level_distribution.csv"),
+            "manuscript_summary": str(TABLE_DIR / "manuscript_alert_validation_summary.csv"),
             "confusion_counts": str(TABLE_DIR / "alert_confusion_counts.csv"),
             "confusion_row_normalized": str(TABLE_DIR / "alert_confusion_row_normalized.csv"),
             "confusion_figure_png": str(FIGURE_DIR / "alert_confusion_matrix.png"),
             "confusion_figure_tiff": str(FIGURE_DIR / "alert_confusion_matrix.tiff"),
         },
     }
-    with (OUTPUT_DIR / "retrospective_alert_validation_metadata.json").open("w", encoding="utf-8") as handle:
+    with (OUTPUT_DIR / "retrospective_alert_validation_metadata.json").open(
+        "w", encoding="utf-8"
+    ) as handle:
         json.dump(metadata, handle, indent=2)
 
 
@@ -472,7 +500,9 @@ def main() -> None:
 
     champion = derive_champion_map()
     selected = load_selected_rolling_predictions(champion)
-    cases = add_alert_labels(build_case_level_frame(selected))
+    cases = build_case_level_frame(selected)
+    thresholds = build_origin_specific_pm25_thresholds(cases)
+    cases = add_alert_labels(cases, thresholds)
 
     overall_summary = summarise_overall(cases)
     horizon_summary = summarise_by_horizon(cases)
@@ -482,6 +512,7 @@ def main() -> None:
     confusion_counts, confusion_row_normalized = build_confusion_tables(cases)
 
     champion.to_csv(TABLE_DIR / "champion_map_used.csv", index=False)
+    thresholds.to_csv(TABLE_DIR / "origin_specific_pm25_thresholds.csv", index=False)
     cases.to_csv(TABLE_DIR / "alert_case_predictions.csv", index=False)
     overall_summary.to_csv(TABLE_DIR / "overall_alert_performance.csv", index=False)
     horizon_summary.to_csv(TABLE_DIR / "alert_performance_by_horizon.csv", index=False)
@@ -492,10 +523,11 @@ def main() -> None:
     confusion_row_normalized.to_csv(TABLE_DIR / "alert_confusion_row_normalized.csv")
 
     render_confusion_figure(confusion_counts, confusion_row_normalized)
-    write_metadata(cases)
+    write_metadata(cases, thresholds)
 
     print("Saved retrospective alert validation outputs to:")
     print(f"  - {TABLE_DIR / 'champion_map_used.csv'}")
+    print(f"  - {TABLE_DIR / 'origin_specific_pm25_thresholds.csv'}")
     print(f"  - {TABLE_DIR / 'alert_case_predictions.csv'}")
     print(f"  - {TABLE_DIR / 'overall_alert_performance.csv'}")
     print(f"  - {TABLE_DIR / 'alert_performance_by_horizon.csv'}")
